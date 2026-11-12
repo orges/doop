@@ -34,8 +34,7 @@ import type { Actor, AgentTask, Frame, RepoScreenRef } from '../shared/types.ts'
  *  (depth-first, small), and the styling context that shapes every screen. */
 const MAX_CLOSURE_FILES = 10
 const MAX_CLOSURE_BYTES = 80_000
-/** sketches from one claim that design at the same time — steady progress
- *  without hammering the model or the GitHub API */
+/** Opt-in parallel imports use two workers; sequential imports use one. */
 const SKETCH_CONCURRENCY = 2
 const MODEL_MAX_TOKENS = 32_000
 const MAX_REQUEST_ROUNDS = 2
@@ -419,6 +418,18 @@ export function designSystemSlug(repo: string): string {
 
 type RepoCard = AgentTask & { payload: NonNullable<AgentTask['payload']> }
 
+export async function runSketchWorkers<T>(
+  items: T[],
+  parallel: boolean,
+  run: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) await run(items[next++]!)
+  }
+  await Promise.all(Array.from({ length: Math.min(parallel ? SKETCH_CONCURRENCY : 1, items.length) }, worker))
+}
+
 function isRepoCard(card: AgentTask): card is RepoCard {
   return (card.kind === 'sketch' || card.kind === 'design-system') && !!card.payload
 }
@@ -459,17 +470,19 @@ export async function runRepoCards(
   actor: Actor,
 ): Promise<void> {
   const repoCards = cards.filter(isRepoCard)
-  const byConnection = new Map<string, RepoCard[]>()
-  for (const card of repoCards) {
-    const list = byConnection.get(card.payload.connectionId) ?? []
+  const byImport = new Map<string, RepoCard[]>()
+  for (const card of repoCards.sort((a, b) => a.startedAt - b.startedAt)) {
+    const key = JSON.stringify([card.payload.connectionId, card.payload.importId])
+    const list = byImport.get(key) ?? []
     list.push(card)
-    byConnection.set(card.payload.connectionId, list)
+    byImport.set(key, list)
   }
   for (const card of cards) {
     if (!isRepoCard(card)) actions.failCard(canvasId, card.id, 'This card lost its repository details. Import again.')
   }
 
-  for (const [connectionId, group] of byConnection) {
+  for (const group of byImport.values()) {
+    const connectionId = group[0]!.payload.connectionId
     const repo = group[0]!.payload.repo
     const conn = await getConnection(canvasId, connectionId)
     if (!conn) {
@@ -513,33 +526,30 @@ export async function runRepoCards(
     const queue = group.filter((c) => c.kind === 'sketch' && c.payload.screen)
     if (!queue.length) continue
     console.log(`[github-recon] ${queue.length} screen(s) from ${repo} on ${model.label}`)
-    const worker = async () => {
-      for (let card = queue.shift(); card; card = queue.shift()) {
-        if (accountDead) {
-          actions.failCard(canvasId, card.id, accountDead)
-          continue
-        }
-        const screen = card.payload.screen!
-        try {
-          actions.setAgentStatus(
-            canvasId,
-            actor,
-            screen.source === 'static'
-              ? `Importing ${screen.title} from ${repo}`
-              : `Sketching ${screen.title} from ${repo}`,
-          )
-          await sketchScreen(canvasId, conn, screen, paths, model, actor)
-          markSynced(conn.id)
-          actions.advanceCard(canvasId, card.id, actor)
-        } catch (err) {
-          console.error(`[github-recon] ${screen.route} failed`, err)
-          const reason = failureReason(err)
-          if (isAccountError(err)) accountDead = reason
-          actions.failCard(canvasId, card.id, reason)
-        }
+    await runSketchWorkers(queue, group[0]!.payload.parallel === true, async (card) => {
+      if (accountDead) {
+        actions.failCard(canvasId, card.id, accountDead)
+        return
       }
-    }
-    await Promise.all(Array.from({ length: Math.min(SKETCH_CONCURRENCY, queue.length) }, worker))
+      const screen = card.payload.screen!
+      try {
+        actions.setAgentStatus(
+          canvasId,
+          actor,
+          screen.source === 'static'
+            ? `Importing ${screen.title} from ${repo}`
+            : `Sketching ${screen.title} from ${repo}`,
+        )
+        await sketchScreen(canvasId, conn, screen, paths, model, actor)
+        markSynced(conn.id)
+        actions.advanceCard(canvasId, card.id, actor)
+      } catch (err) {
+        console.error(`[github-recon] ${screen.route} failed`, err)
+        const reason = failureReason(err)
+        if (isAccountError(err)) accountDead = reason
+        actions.failCard(canvasId, card.id, reason)
+      }
+    })
     console.log(`[github-recon] ${repo} done`)
   }
 }

@@ -190,6 +190,9 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
   const [device, setDevice] = useState<DeviceFlow | null>(null)
   const [redirect, setRedirect] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [customModel, setCustomModel] = useState('')
+  const [customEndpoint, setCustomEndpoint] = useState('')
+  const [customVision, setCustomVision] = useState(false)
 
   const settle = useCallback(
     (next: ModelAccounts) => {
@@ -320,6 +323,8 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
 
   const saveKey = () => {
     const kind = showKey || 'openai-key'
+    if (kind === 'zai-key' || kind === 'zai-api-key' || kind === 'custom-key')
+      return act(kind, () => api.connectCompatible(kind, apiKey, customModel, customEndpoint, customVision))
     const connect =
       kind === 'anthropic-key'
         ? api.connectAnthropicKey
@@ -380,6 +385,11 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
   /* a connected row offers the provider's live list once it has arrived;
      every other row advertises its curated menu */
   const menuFor = (kind: ModelAccountKind): AgentModelOption[] => {
+    if (kind === 'zai-key' || kind === 'zai-api-key' || kind === 'custom-key') {
+      const account = accountOf(kind)
+      const model = account?.model
+      return model ? [{ id: model, name: model, blurb: '', vision: account?.vision === true }] : []
+    }
     const catalog = catalogs[kind]
     return (accountOf(kind) && catalog?.live ? catalog.models : undefined) ?? view.menus[kind] ?? []
   }
@@ -428,6 +438,32 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
   const keyForm = (kind: ModelAccountKind, placeholder: string) => (
     <>
       <p className="leading-[1.55]">{t('models.keyStoredNote')}</p>
+      {(kind === 'zai-key' || kind === 'zai-api-key' || kind === 'custom-key') && (
+        <div className="mt-[10px] flex flex-col gap-2">
+          {kind === 'custom-key' && (
+            <>
+              <Input
+                value={customEndpoint}
+                onChange={(e) => setCustomEndpoint(e.target.value)}
+                placeholder="https://example.com/v1/chat/completions"
+                aria-label="Approved API endpoint URL"
+              />
+              <p>The administrator must approve the exact URL first.</p>
+            </>
+          )}
+          <Input
+            value={customModel}
+            onChange={(e) => setCustomModel(e.target.value)}
+            placeholder={kind !== 'custom-key' ? 'glm-4.7' : 'Model ID'}
+            aria-label="Model ID"
+          />
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={customVision} onChange={(e) => setCustomVision(e.target.checked)} />{' '}
+            Supports images (enables visual review)
+          </label>
+          <p>Enable only if this model accepts images. Screenshots are sent to the selected provider.</p>
+        </div>
+      )}
       <div className="mt-[10px] flex gap-2 max-md:flex-col">
         <Input
           className={cn(maInput, 'flex-1')}
@@ -462,6 +498,9 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
     const catalogError = account ? catalogs[cfg.kind]?.error : undefined
     const openKeyForm = () => {
       setApiKey('')
+      setCustomModel(account?.model ?? (cfg.kind === 'zai-key' || cfg.kind === 'zai-api-key' ? 'glm-4.7' : ''))
+      setCustomEndpoint(account?.endpoint ?? '')
+      setCustomVision(account?.vision === true)
       setError('')
       setShowKey(cfg.kind)
     }
@@ -516,6 +555,17 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
             menuItems={[{ label: t('models.replaceKey'), onSelect: openKeyForm }]}
             error={entering ? undefined : errorFor(cfg.kind)}
           />
+          {(cfg.kind === 'zai-key' || cfg.kind === 'zai-api-key' || cfg.kind === 'custom-key') && (
+            <label className="flex items-center gap-2 px-3 pb-2 text-xs text-ink-soft">
+              <input
+                type="checkbox"
+                checked={account.vision === true}
+                disabled={busy}
+                onChange={(e) => void act(cfg.kind, () => api.setAgentVision(cfg.kind, e.target.checked))}
+              />
+              Supports images (enables visual review; screenshots are sent to this provider)
+            </label>
+          )}
           {entering && (
             <Modal size="sm" onClose={() => setShowKey(false)}>
               <ModalTitle>{t('models.replaceKeyTitle', { name: cfg.title })}</ModalTitle>
@@ -728,6 +778,27 @@ export function ModelAccountPanel({ onChange }: { onChange?: () => void }) {
       short: t('models.geminiKeyShort'),
       mark: <AppIcon brand="gemini" />,
       placeholder: 'AIza…',
+    }),
+    keyRow({
+      kind: 'zai-key',
+      title: 'Z.ai Coding Plan',
+      short: 'Your own GLM Coding Plan key',
+      mark: <span>Z</span>,
+      placeholder: 'Z.ai API key',
+    }),
+    keyRow({
+      kind: 'zai-api-key',
+      title: 'Z.ai API',
+      short: 'Your own standard Z.ai API key',
+      mark: <span>Z</span>,
+      placeholder: 'Z.ai API key',
+    }),
+    keyRow({
+      kind: 'custom-key',
+      title: 'Custom provider',
+      short: 'Your own approved OpenAI-compatible endpoint',
+      mark: <span>API</span>,
+      placeholder: 'API key',
     }),
     /* the Plan's row decides for itself whether it is a row or a card; the
        pane only needs to know which part it belongs in */

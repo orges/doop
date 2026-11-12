@@ -154,6 +154,9 @@ export const canvas: Catalog['canvas'] = {
   repoLede:
     'O Doop destila o design system do repositório em um guia de estilo fixado neste canvas — todo agente o segue a partir daí. Cada componente ou página que você escolher vira um card no quadro: o Doop o esboça a partir do código-fonte e o entrega como frame. Páginas inteiras são opcionais.',
   extractTitle: 'Extrair o design system para um guia de estilo',
+  repoParallelTitle: 'Importar telas em paralelo',
+  repoParallelDescription:
+    'Desativado: uma tela por vez, reduzindo o uso da API. Ativado: até duas telas ao mesmo tempo.',
   extractDescription:
     'Paleta, tipografia e espaçamento do tema do repositório — fixados no canvas e seguidos por todo agente.',
   screensToImport: 'Telas para importar',

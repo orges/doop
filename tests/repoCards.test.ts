@@ -57,6 +57,16 @@ beforeEach(() => {
 })
 
 describe('addRepoCards', () => {
+  it('persists the parallel choice on each import card', () => {
+    const cards = actions.addRepoCards(
+      canvasId,
+      { connectionId: 'c', repo: 'a/b', screens: [button, pricing], designSystem: true, parallel: true },
+      'kevin',
+      'user-1',
+    )
+    expect(cards.every((card) => card.payload?.parallel === true)).toBe(true)
+    expect(new Set(cards.map((card) => card.payload?.importId)).size).toBe(1)
+  })
   it('queues the design system first, then one sketch card per screen, all for Doop', () => {
     const cards = actions.addRepoCards(
       canvasId,

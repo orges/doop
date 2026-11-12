@@ -239,6 +239,7 @@ function fromCompletion(body: CompletionBody, label: string): TurnResult {
 export async function runChatCompletionsTurn(config: ChatCompletionsConfig, req: TurnRequest): Promise<TurnResult> {
   const res = await fetch(config.url, {
     method: 'POST',
+    redirect: 'error',
     headers: { ...config.headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: config.model,

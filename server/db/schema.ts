@@ -643,6 +643,7 @@ export const modelAccounts = pgTable(
     model: text('model'),
     /** OpenAI reasoning effort this user picked; null = the server default */
     reasoningEffort: text('reasoning_effort'),
+    supportsVision: boolean('supports_vision').notNull().default(false),
     connectedAt: bigint('connected_at', { mode: 'number' }).notNull(),
     updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
   },

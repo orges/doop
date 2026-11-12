@@ -1383,6 +1383,7 @@ function ImportModal({
   )
   const [repoSelected, setRepoSelected] = useState<Set<string>>(new Set())
   const [extractSystem, setExtractSystem] = useState(true)
+  const [repoParallel, setRepoParallel] = useState(false)
   const [showPages, setShowPages] = useState(false)
 
   function errorMessage(caught: unknown, fallback: string) {
@@ -1462,9 +1463,8 @@ function ImportModal({
     })
   }
 
-  /* screens can share a route across kinds (a page and its committed dist
-     HTML) — key rows by kind + route */
-  const screenKey = (s: RepoScreen) => `${s.kind}|${s.route}`
+  /* Match the server identity: multiple source files can share a route. */
+  const screenKey = (s: RepoScreen) => `${s.kind}|${s.route}|${s.sourcePath}`
 
   function openRepoReview(connection: GithubConnectionInfo, manifest: RepoManifest) {
     setRepoReview({ connection, manifest })
@@ -1490,7 +1490,13 @@ function ImportModal({
     setError(null)
     const screens = repoReview.manifest.screens.filter((s) => repoSelected.has(screenKey(s)))
     try {
-      const result = await api.importGithubScreens(canvasId, repoReview.connection.id, screens, extractSystem)
+      const result = await api.importGithubScreens(
+        canvasId,
+        repoReview.connection.id,
+        screens,
+        extractSystem,
+        repoParallel,
+      )
       if (!result.cards.length) {
         setError(result.rejected.length ? t('canvas.errScreensGone') : t('canvas.errAlreadyOnBoard'))
         setBusy(null)
@@ -1580,6 +1586,13 @@ function ImportModal({
               onChange={setExtractSystem}
               title={t('canvas.extractTitle')}
               description={t('canvas.extractDescription')}
+            />
+            <CheckboxCard
+              checked={repoParallel}
+              disabled={!!busy}
+              onChange={setRepoParallel}
+              title={t('canvas.repoParallelTitle')}
+              description={t('canvas.repoParallelDescription')}
             />
             <SelectionBar
               className="mt-4"

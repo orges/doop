@@ -161,6 +161,8 @@ export const canvas = {
   repoLede:
     "Doop distills the repo's design system into a style guide pinned to this canvas — every agent follows it from then on. Each component or page you pick becomes a card on the board: Doop sketches it from the source and lands it as a frame. Whole pages are optional.",
   extractTitle: 'Extract the design system into a style guide',
+  repoParallelTitle: 'Import screens in parallel',
+  repoParallelDescription: 'Off: one screen at a time, gentler on provider limits. On: up to two screens at once.',
   extractDescription:
     "Palette, type and spacing from the repo's theme — pinned to the canvas, followed by every agent.",
   screensToImport: 'Screens to import',

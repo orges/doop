@@ -149,7 +149,15 @@ export interface Allowance {
   onOwnAccount: boolean
 }
 
-export type ModelAccountKind = 'chatgpt' | 'openai-key' | 'anthropic-key' | 'openrouter-key' | 'gemini-key'
+export type ModelAccountKind =
+  | 'chatgpt'
+  | 'openai-key'
+  | 'anthropic-key'
+  | 'openrouter-key'
+  | 'gemini-key'
+  | 'zai-key'
+  | 'zai-api-key'
+  | 'custom-key'
 
 /** An in-flight device sign-in: the user types `userCode` at `verificationUrl`
  *  and the server polls OpenAI until they approve. */
@@ -187,6 +195,8 @@ export interface ModelAccountStatus {
   plan?: string
   /** the model tier this account runs on right now */
   model?: string
+  endpoint?: string
+  vision?: boolean
   /** the reasoning effort in effect; only the OpenAI kinds have one */
   effort?: string
   connectedAt: number
@@ -396,10 +406,16 @@ export const api = {
     req(`/api/canvases/${canvasId}/github/${connId}`, { method: 'DELETE' }),
   analyzeGithub: (canvasId: string, connId: string) =>
     req<RepoManifest>(`/api/canvases/${canvasId}/github/${connId}/analyze`, { method: 'POST' }),
-  importGithubScreens: (canvasId: string, connId: string, screens: RepoScreen[], designSystem = true) =>
+  importGithubScreens: (
+    canvasId: string,
+    connId: string,
+    screens: RepoScreen[],
+    designSystem = true,
+    parallel = false,
+  ) =>
     req<GithubImportResult>(`/api/canvases/${canvasId}/github/${connId}/import`, {
       method: 'POST',
-      body: JSON.stringify({ screens, design_system: designSystem }),
+      body: JSON.stringify({ screens, design_system: designSystem, parallel }),
     }),
   guidelineHistory: (canvasId: string, name: string) =>
     req<{ markdown: string; savedAt: number; savedBy: string }[]>(
@@ -575,10 +591,23 @@ export const api = {
     req<ModelAccounts>('/api/model-account/openrouter-key', { method: 'POST', body: JSON.stringify({ apiKey }) }),
   connectGeminiKey: (apiKey: string) =>
     req<ModelAccounts>('/api/model-account/gemini-key', { method: 'POST', body: JSON.stringify({ apiKey }) }),
+  connectCompatible: (
+    kind: 'zai-key' | 'zai-api-key' | 'custom-key',
+    apiKey: string,
+    model: string,
+    endpoint: string,
+    vision: boolean,
+  ) =>
+    req<ModelAccounts>(`/api/model-account/${kind}`, {
+      method: 'POST',
+      body: JSON.stringify({ apiKey, model, endpoint, vision }),
+    }),
   disconnectModelAccount: (kind: ModelAccountKind) =>
     req<ModelAccounts>(`/api/model-account/${kind}`, { method: 'DELETE' }),
   setAgentModel: (kind: ModelAccountKind, model: string) =>
     req<ModelAccounts>(`/api/model-account/${kind}`, { method: 'PATCH', body: JSON.stringify({ model }) }),
+  setAgentVision: (kind: ModelAccountKind, vision: boolean) =>
+    req<ModelAccounts>(`/api/model-account/${kind}`, { method: 'PATCH', body: JSON.stringify({ vision }) }),
   setAgentEffort: (kind: ModelAccountKind, effort: string) =>
     req<ModelAccounts>(`/api/model-account/${kind}`, { method: 'PATCH', body: JSON.stringify({ effort }) }),
   setModelAccountEnabled: (kind: ModelAccountKind, enabled: boolean) =>

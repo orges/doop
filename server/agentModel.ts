@@ -5,7 +5,13 @@ import { localAgentRuns, type LocalHarnessRequest } from './localAgentRuns.ts'
 import { isClaudeEffort, isClaudeModel, type LocalAgentResult } from '../shared/localAgent.ts'
 import type { RunnerPick } from '../shared/agentRunner.ts'
 import Anthropic from '@anthropic-ai/sdk'
-import { withFreshToken, accountModelFor, accountVisionFor, accountWithPick } from './modelAccounts.ts'
+import {
+  withFreshToken,
+  accountModelFor,
+  accountVisionFor,
+  accountWithPick,
+  approvedCustomUrl,
+} from './modelAccounts.ts'
 import type { AccountKind, ModelAccount } from './modelAccounts.ts'
 import { ModelAuthError, ModelUnavailableError, effortFor, runAzureTurn, runOpenAiTurn } from './openaiAgent.ts'
 import type { StopReason, TurnBlock } from './openaiAgent.ts'
@@ -203,6 +209,9 @@ const BYO_LABELS: Record<AccountKind, string> = {
   'anthropic-key': 'Claude API',
   'openrouter-key': 'OpenRouter',
   'gemini-key': 'Gemini',
+  'zai-key': 'Z.ai Coding Plan',
+  'zai-api-key': 'Z.ai API',
+  'custom-key': 'Custom provider',
 }
 
 /* the OpenAI-shaped transports take one system string; cache breakpoints are
@@ -239,6 +248,39 @@ function byoModel(account: ModelAccount): AgentModel {
           throw error
         }
       },
+    }
+  }
+  if (account.kind === 'zai-key' || account.kind === 'zai-api-key' || account.kind === 'custom-key') {
+    if (!account.apiKey) throw new ModelAuthError('Reconnect your API key in Settings.')
+    const url =
+      account.kind === 'zai-key'
+        ? 'https://api.z.ai/api/coding/paas/v4/chat/completions'
+        : account.kind === 'zai-api-key'
+          ? 'https://api.z.ai/api/paas/v4/chat/completions'
+          : approvedCustomUrl(account.accountId ?? '')
+    const vision = accountVisionFor(account)
+    return {
+      provider: account.kind,
+      label: BYO_LABELS[account.kind],
+      userId: account.userId,
+      vision,
+      run: (req) =>
+        runChatCompletionsTurn(
+          {
+            url,
+            headers: { Authorization: `Bearer ${account.apiKey}` },
+            model: accountModelFor(account),
+            label: BYO_LABELS[account.kind],
+            vision,
+          },
+          {
+            system: joinSystem(req),
+            tools: req.tools,
+            messages: req.messages,
+            maxTokens: req.maxTokens,
+            signal: req.signal,
+          },
+        ),
     }
   }
   if (account.kind === 'openrouter-key' || account.kind === 'gemini-key') {

@@ -342,6 +342,16 @@ export async function responseError(res: Response, label: string): Promise<Error
     return new ModelAuthError(`${label} rejected the credentials (${res.status}) — reconnect the account`)
   }
   if (res.status === 429) {
+    if (label.startsWith('Z.ai')) {
+      try {
+        if (String(JSON.parse(text)?.error?.code) === '1113')
+          return new Error(
+            `${label} billing: insufficient balance or no resource package (1113). Check your plan and endpoint.`,
+          )
+      } catch {
+        /* a non-JSON error stays a generic 429 */
+      }
+    }
     return new Error(`${label} rate-limited this account (429). ${detail}`)
   }
   if ((res.status === 400 || res.status === 404) && isModelUnavailable(detail)) {
@@ -445,7 +455,10 @@ export async function runAzureTurn(config: AzureConfig, req: TurnRequest): Promi
 }
 
 const transports: Record<
-  Exclude<ModelAccount['kind'], 'anthropic-key' | 'openrouter-key' | 'gemini-key'>,
+  Exclude<
+    ModelAccount['kind'],
+    'anthropic-key' | 'openrouter-key' | 'gemini-key' | 'zai-key' | 'zai-api-key' | 'custom-key'
+  >,
   (account: ModelAccount, req: TurnRequest) => Promise<TurnResult>
 > = {
   chatgpt: runChatgpt,
@@ -453,7 +466,14 @@ const transports: Record<
 }
 
 export function runOpenAiTurn(account: ModelAccount, req: TurnRequest): Promise<TurnResult> {
-  if (account.kind === 'anthropic-key' || account.kind === 'openrouter-key' || account.kind === 'gemini-key') {
+  if (
+    account.kind === 'anthropic-key' ||
+    account.kind === 'openrouter-key' ||
+    account.kind === 'gemini-key' ||
+    account.kind === 'zai-key' ||
+    account.kind === 'zai-api-key' ||
+    account.kind === 'custom-key'
+  ) {
     throw new Error(`${account.kind} accounts do not use the OpenAI transport`)
   }
   return transports[account.kind](account, req)

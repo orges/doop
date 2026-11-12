@@ -1289,6 +1289,7 @@ export interface RepoImportInput {
   repo: string
   screens: RepoScreenRef[]
   designSystem: boolean
+  parallel?: boolean
 }
 
 /** What an import would queue, after removing screens already waiting or in
@@ -1302,7 +1303,12 @@ export function planRepoCards(
   const list = taskLog.get(canvasId) ?? []
   const open = list.filter((t) => t.queuedBy && !t.endedAt && t.payload?.connectionId === input.connectionId)
   const importId = nanoid(8)
-  const base = { connectionId: input.connectionId, repo: input.repo, importId }
+  const base = {
+    connectionId: input.connectionId,
+    repo: input.repo,
+    importId,
+    ...(input.parallel ? { parallel: true } : {}),
+  }
   const wanted: { kind: RepoCardKind; title: string; payload: RepoCardPayload }[] = []
   if (input.designSystem && !open.some((t) => t.kind === 'design-system'))
     wanted.push({ kind: 'design-system', title: `Design system of ${input.repo}`, payload: base })

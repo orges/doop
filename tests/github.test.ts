@@ -131,6 +131,9 @@ describe('selection matching', () => {
     expect(matchSelection(manifest, [pick, pick]).screens).toHaveLength(1)
     expect(() => matchSelection(manifest, [])).toThrow(/at least one/)
     expect(() => matchSelection(manifest, 'nope')).toThrow(/array/)
+    const many = Array.from({ length: 41 }, (_, i) => ({ ...manifest[0]!, route: `/page-${i}`, sourcePath: `pages/${i}.tsx` }))
+    expect(matchSelection(many, many).screens).toHaveLength(41)
+    expect(() => matchSelection(manifest, Array(201).fill(pick))).toThrow(/200 screens/)
   })
 })
 

@@ -29,6 +29,9 @@ export const MODEL_MENUS: Record<AccountKind, ModelOption[]> = {
   'anthropic-key': ANTHROPIC_MODELS,
   'openrouter-key': OPENROUTER_MODELS,
   'gemini-key': GEMINI_MODELS,
+  'zai-key': [],
+  'zai-api-key': [],
+  'custom-key': [],
 }
 
 export async function listRunners(userId: string): Promise<AgentRunners> {
@@ -55,7 +58,9 @@ export async function listRunners(userId: string): Promise<AgentRunners> {
       ...(account.email ? { email: account.email } : {}),
       model: accountModelFor(account),
       ...(effort ? { effort } : {}),
-      models: MODEL_MENUS[account.kind].map(({ id, name, blurb }) => ({ id, name, blurb })),
+      models: MODEL_MENUS[account.kind].length
+        ? MODEL_MENUS[account.kind].map(({ id, name, blurb }) => ({ id, name, blurb }))
+        : [{ id: accountModelFor(account), name: accountModelFor(account), blurb: '' }],
       ...(effort ? { efforts: reasoningEffortOptions(effort) } : {}),
     })
   }

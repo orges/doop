@@ -5,7 +5,13 @@ let server: Server
 let alice: Client
 let bob: Client
 beforeAll(async () => {
-  server = await startServer({ ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', DATABASE_URL: '', SMTP_HOST: '' })
+  server = await startServer({
+    ANTHROPIC_API_KEY: '',
+    OPENAI_API_KEY: '',
+    DATABASE_URL: '',
+    SMTP_HOST: '',
+    CUSTOM_AGENT_URLS: 'https://example.com/v1/chat/completions',
+  })
   alice = await new Client(server).signUp('roster-alice@example.test', 'Alice')
   bob = await new Client(server).signUp('roster-bob@example.test', 'Bob')
 }, 60000)
@@ -13,6 +19,50 @@ afterAll(() => server?.stop())
 
 type View = { accounts: { kind: string; enabled: boolean; model?: string }[]; default?: string }
 const accountIn = (view: View, kind: string) => view.accounts.find((a) => a.kind === kind)
+
+it('isolates compatible providers by user and rejects unapproved endpoints', async () => {
+  const key = 'private-zai-test-key'
+  const zai = await alice.post('/api/model-account/zai-key', { apiKey: key, model: 'glm-4.7', vision: true })
+  expect(zai.status).toBe(200)
+  const zaiView = await zai.json()
+  expect(JSON.stringify(zaiView)).not.toContain(key)
+  expect(accountIn(zaiView, 'zai-key')).toMatchObject({ vision: true })
+  expect((await alice.patch('/api/model-account/zai-key', { vision: false })).status).toBe(200)
+  expect(accountIn(await (await alice.get('/api/model-account')).json(), 'zai-key')).toMatchObject({ vision: false })
+  expect((await alice.patch('/api/model-account/zai-key', { vision: 'true' })).status).toBe(400)
+  expect((await alice.patch('/api/model-account/zai-key', { vision: true })).status).toBe(200)
+  expect(accountIn(await (await alice.get('/api/model-account')).json(), 'zai-key')).toMatchObject({ vision: true })
+  const standard = await alice.post('/api/model-account/zai-api-key', { apiKey: 'api-secret', model: 'glm-4.7' })
+  expect(standard.status).toBe(200)
+  const view = await standard.json()
+  expect(view.accounts.map((account: { kind: string }) => account.kind)).toEqual(
+    expect.arrayContaining(['zai-key', 'zai-api-key']),
+  )
+  expect(JSON.stringify(view)).not.toContain('api-secret')
+  const config = {
+    apiKey: 'private-custom-key',
+    model: 'my-model',
+    endpoint: 'https://example.com/v1/chat/completions',
+  }
+  expect((await alice.post('/api/model-account/custom-key', { ...config, endpoint: 'http://127.0.0.1/' })).status).toBe(
+    400,
+  )
+  expect(
+    (
+      await alice.post('/api/model-account/custom-key', {
+        ...config,
+        endpoint: 'https://example.com/v1/chat/completions?key=secret',
+      })
+    ).status,
+  ).toBe(400)
+  const connected = await alice.post('/api/model-account/custom-key', config)
+  expect(connected.status).toBe(200)
+  expect(JSON.stringify(await connected.json())).not.toContain(config.apiKey)
+  expect((await (await bob.get('/api/model-account')).json()).accounts).toEqual([])
+  await alice.delete('/api/model-account/zai-key')
+  await alice.delete('/api/model-account/zai-api-key')
+  await alice.delete('/api/model-account/custom-key')
+})
 
 it('stores an OpenRouter key privately, validates its roster, and serves the per-kind menus', async () => {
   /* the menus ride every account response, keyed by kind, with vision flags */

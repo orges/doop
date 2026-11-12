@@ -468,7 +468,7 @@ export function wrapGeneratedHtml(
 /* ------------------------------------------------------------------ */
 /* Import + resync                                                     */
 
-const MAX_IMPORT_SCREENS = 40
+const MAX_IMPORT_SCREENS = 200
 
 /** A screen's identity across analyze → import → resync. */
 function screenIdentity(s: { kind: string; route: string; sourcePath: string }): string {

@@ -1017,9 +1017,17 @@ app.patch('/api/model-account/:kind', async (req, res) => {
   if (!modelAccounts.isAccountKind(kind)) return res.status(400).json({ error: 'unknown account kind' })
   try {
     const userId = req.user!.id
-    const { model, effort, enabled } = (req.body ?? {}) as { model?: unknown; effort?: unknown; enabled?: unknown }
+    const { model, effort, enabled, vision } = (req.body ?? {}) as {
+      model?: unknown
+      effort?: unknown
+      enabled?: unknown
+      vision?: unknown
+    }
     if (typeof enabled === 'boolean') await modelAccounts.setAccountEnabled(userId, kind, enabled)
-    else if (effort !== undefined) await modelAccounts.setAccountEffort(userId, kind, String(effort))
+    else if (vision !== undefined) {
+      if (typeof vision !== 'boolean') throw new Error('vision must be a boolean')
+      await modelAccounts.setAccountVision(userId, kind, vision)
+    } else if (effort !== undefined) await modelAccounts.setAccountEffort(userId, kind, String(effort))
     else await modelAccounts.setAccountModel(userId, kind, String(model ?? ''))
     res.json(await accountsView(userId))
     /* switching one on can make queued work runnable */
@@ -1094,6 +1102,24 @@ const KEY_CONNECTS = {
   'openrouter-key': modelAccounts.connectOpenRouterKey,
   'gemini-key': modelAccounts.connectGeminiKey,
 } as const
+for (const kind of ['zai-key', 'zai-api-key', 'custom-key'] as const) {
+  app.post(`/api/model-account/${kind}`, async (req, res) => {
+    try {
+      await modelAccounts.connectCompatible(
+        req.user!.id,
+        kind,
+        String(req.body?.apiKey ?? ''),
+        String(req.body?.model ?? ''),
+        String(req.body?.endpoint ?? ''),
+        req.body?.vision === true,
+      )
+      res.json(await accountsView(req.user!.id))
+      wakeUserWork(req.user!.id)
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : 'could not save that connection' })
+    }
+  })
+}
 for (const [kind, connect] of Object.entries(KEY_CONNECTS)) {
   app.post(`/api/model-account/${kind}`, async (req, res) => {
     try {
@@ -1662,7 +1688,13 @@ app.post('/api/canvases/:id/github/:connId/import', async (req, res) => {
     const { screens, rejected } = rawScreens.length
       ? github.matchSelection((await github.analyzeConnection(conn)).screens, rawScreens)
       : { screens: [], rejected: [] }
-    const input = { connectionId: conn.id, repo: conn.repo, screens, designSystem }
+    const input = {
+      connectionId: conn.id,
+      repo: conn.repo,
+      screens,
+      designSystem,
+      parallel: req.body?.parallel === true,
+    }
     /* plan → gate → queue runs one import at a time per connection, so two
        overlapping imports of the same screens cannot both pass the plan and
        both pay while only one queues */

@@ -439,6 +439,8 @@ export interface RepoCardPayload {
   repo: string
   /** one import = one click; groups the cards it queued on the board */
   importId: string
+  /** Opt in to two simultaneous screen workers; missing means sequential. */
+  parallel?: boolean
   /** the screen to sketch — absent on a design-system card */
   screen?: RepoScreenRef
 }

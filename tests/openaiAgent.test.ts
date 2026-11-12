@@ -375,3 +375,16 @@ describe('Codex-backend SSE stream', () => {
     expect(fromResponse(body).content).toEqual([{ type: 'text', text: 'split' }])
   })
 })
+
+it('distinguishes Z.ai billing failures from rate limits', async () => {
+  const billing = await responseError(
+    new Response(JSON.stringify({ error: { code: '1113' } }), { status: 429 }),
+    'Z.ai API',
+  )
+  expect(billing.message).toMatch(/billing.*1113/i)
+  const throttled = await responseError(
+    new Response(JSON.stringify({ error: { code: '1302' } }), { status: 429 }),
+    'Z.ai API',
+  )
+  expect(throttled.message).toMatch(/rate-limited/)
+})

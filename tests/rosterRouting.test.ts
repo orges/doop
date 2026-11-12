@@ -26,6 +26,19 @@ vi.mock('../server/modelAccounts.ts', async (importOriginal) => {
 import { pickModel } from '../server/agentModel'
 
 const request = { system: [{ text: 'Design', cache: true }], tools: [], messages: [], maxTokens: 2048 }
+
+it('routes Z.ai through its fixed endpoint using the user key and model', async () => {
+  mocks.account.mockResolvedValue({ kind: 'zai-key', userId: 'alice', apiKey: 'secret', model: 'glm-4.7' })
+  const spy = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'Done' } }] }), { status: 200 }))
+  const model = await pickModel('alice')
+  expect(model).toMatchObject({ provider: 'zai-key', vision: false })
+  await model!.run(request)
+  expect(spy.mock.calls[0]![0]).toBe('https://api.z.ai/api/coding/paas/v4/chat/completions')
+  expect(spy.mock.calls[0]![1]).toMatchObject({ redirect: 'error', headers: { Authorization: 'Bearer secret' } })
+  expect(JSON.parse(String(spy.mock.calls[0]![1]?.body)).model).toBe('glm-4.7')
+})
 afterEach(() => {
   vi.restoreAllMocks()
   mocks.account.mockReset()
@@ -71,4 +84,45 @@ it('routes a Gemini account with its default model and vision intact', async () 
   expect(model).toMatchObject({ provider: 'gemini-key', vision: true, label: 'Gemini (gemini-3.7-flash)' })
   expect(await model!.run(request)).toMatchObject({ stop_reason: 'end_turn' })
   expect(String(fetchSpy.mock.calls[0]![0])).toContain('generativelanguage.googleapis.com')
+})
+
+it('routes a standard Z.ai API account to the standard billing endpoint', async () => {
+  mocks.account.mockResolvedValue({ kind: 'zai-api-key', userId: 'alice', apiKey: 'api-secret', model: 'glm-4.7' })
+  const spy = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'Done' } }] }), { status: 200 }))
+  const model = await pickModel('alice')
+  expect(model).toMatchObject({ provider: 'zai-api-key', vision: false })
+  await model!.run(request)
+  expect(spy.mock.calls[0]![0]).toBe('https://api.z.ai/api/paas/v4/chat/completions')
+  expect(spy.mock.calls[0]![1]).toMatchObject({ headers: { Authorization: 'Bearer api-secret' } })
+})
+
+it('sends images only when the user enables visual support', async () => {
+  for (const vision of [false, true]) {
+    mocks.account.mockResolvedValue({
+      kind: 'zai-key',
+      userId: 'alice',
+      apiKey: 'secret',
+      model: 'glm-5.3-flash',
+      vision,
+    })
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: 'Done' } }] }), { status: 200 }))
+    const model = await pickModel('alice')
+    expect(model).toMatchObject({ vision })
+    await model!.run({
+      ...request,
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }],
+        },
+      ],
+    })
+    const payload = JSON.parse(String(spy.mock.calls[0]![1]?.body))
+    expect(JSON.stringify(payload).includes('data:image/png;base64,aGVsbG8=')).toBe(vision)
+    spy.mockRestore()
+  }
 })

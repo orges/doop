@@ -57,7 +57,15 @@ const REDIRECT_URI = env.CHATGPT_OAUTH_REDIRECT_URI
    fetch — an ordinary product User-Agent passes where no header at all does */
 const AUTH_USER_AGENT = env.CHATGPT_AUTH_USER_AGENT
 
-export type AccountKind = 'chatgpt' | 'openai-key' | 'anthropic-key' | 'openrouter-key' | 'gemini-key'
+export type AccountKind =
+  | 'chatgpt'
+  | 'openai-key'
+  | 'anthropic-key'
+  | 'openrouter-key'
+  | 'gemini-key'
+  | 'zai-key'
+  | 'zai-api-key'
+  | 'custom-key'
 
 const ACCOUNT_KINDS: readonly string[] = [
   'chatgpt',
@@ -65,6 +73,9 @@ const ACCOUNT_KINDS: readonly string[] = [
   'anthropic-key',
   'openrouter-key',
   'gemini-key',
+  'zai-key',
+  'zai-api-key',
+  'custom-key',
 ] satisfies AccountKind[]
 
 export interface ModelAccount {
@@ -77,6 +88,8 @@ export interface ModelAccount {
   refreshToken?: string
   expiresAt?: number
   apiKey?: string
+  /** Whether this custom connection accepts images. */
+  vision?: boolean
   /** model tier the user picked; unset = the server default */
   model?: string
   /** OpenAI reasoning effort the user picked; unset = the server default */
@@ -94,6 +107,8 @@ export interface AccountStatus {
   plan?: string
   /** the model tier in effect, resolved (never null in a status) */
   model?: string
+  endpoint?: string
+  vision?: boolean
   /** the reasoning effort in effect, resolved; only the OpenAI kinds have one */
   effort?: string
   connectedAt: number
@@ -136,6 +151,7 @@ function toAccount(row: typeof modelAccounts.$inferSelect): ModelAccount | null 
     ...(row.apiKey ? { apiKey: row.apiKey } : {}),
     ...(row.model ? { model: row.model } : {}),
     ...(isReasoningEffort(row.reasoningEffort) ? { effort: row.reasoningEffort } : {}),
+    vision: row.supportsVision,
     enabled: row.enabled,
     connectedAt: row.connectedAt,
   }
@@ -168,6 +184,8 @@ export function statusOf(account: ModelAccount): AccountStatus {
     ...(account.plan ? { plan: account.plan } : {}),
     /* resolved, so the UI shows what will actually run rather than "default" */
     model: accountModelFor(account),
+    ...(account.kind === 'custom-key' && account.accountId ? { endpoint: account.accountId } : {}),
+    ...(['zai-key', 'zai-api-key', 'custom-key'].includes(account.kind) ? { vision: account.vision === true } : {}),
     ...(takesReasoningEffort(account.kind) ? { effort: effortFor(account) } : {}),
     connectedAt: account.connectedAt,
   }
@@ -201,6 +219,9 @@ const MODEL_POLICY: Record<AccountKind, { resolve(model?: string): string; isKno
     resolve: (model) => model || DEFAULT_GEMINI,
     isKnown: (model) => GEMINI_API_MODEL.test(model),
   },
+  'zai-key': { resolve: (model) => model || 'glm-4.7', isKnown: (model) => /^[a-zA-Z0-9._/-]{1,120}$/.test(model) },
+  'zai-api-key': { resolve: (model) => model || 'glm-4.7', isKnown: (model) => /^[a-zA-Z0-9._/-]{1,120}$/.test(model) },
+  'custom-key': { resolve: (model) => model || '', isKnown: (model) => /^[a-zA-Z0-9._/-]{1,120}$/.test(model) },
 }
 
 export function accountModelFor(account: Pick<ModelAccount, 'kind' | 'model'>): string {
@@ -228,7 +249,9 @@ export function accountWithPick(account: ModelAccount, pick: RunnerPick | undefi
  *  curated menu (a server env override) is trusted to have vision except on
  *  OpenRouter, whose roster mixes text-only models — there the conservative
  *  answer is a degraded run rather than a 400 on the first screenshot. */
-export function accountVisionFor(account: Pick<ModelAccount, 'kind' | 'model'>): boolean {
+export function accountVisionFor(account: Pick<ModelAccount, 'kind' | 'model' | 'vision'>): boolean {
+  if (account.kind === 'zai-key' || account.kind === 'zai-api-key' || account.kind === 'custom-key')
+    return account.vision === true
   const model = accountModelFor(account)
   const menu =
     account.kind === 'openrouter-key' ? OPENROUTER_MODELS : account.kind === 'gemini-key' ? GEMINI_MODELS : null
@@ -262,6 +285,14 @@ export async function setAccountEnabled(userId: string, kind: AccountKind, enabl
   await savePick(account, { enabled })
 }
 
+export async function setAccountVision(userId: string, kind: AccountKind, vision: boolean): Promise<void> {
+  if (!['zai-key', 'zai-api-key', 'custom-key'].includes(kind))
+    throw new Error('This connection does not support a manual vision setting')
+  const account = await getAccount(userId, kind)
+  if (!account) throw new Error('that account is not connected')
+  await savePick(account, { supportsVision: vision })
+}
+
 /** Write ONLY the picked column, and only onto the account the pick was
  *  checked against. A whole-row upsert here would carry the tokens read
  *  moments ago back over a refresh that landed in between (the refresh token
@@ -270,7 +301,7 @@ export async function setAccountEnabled(userId: string, kind: AccountKind, enabl
  *  provider off an account that switched to another meanwhile. */
 async function savePick(
   account: Pick<ModelAccount, 'userId' | 'kind'>,
-  pick: { model: string } | { reasoningEffort: string } | { enabled: boolean },
+  pick: { model: string } | { reasoningEffort: string } | { enabled: boolean } | { supportsVision: boolean },
 ): Promise<void> {
   const written = await db
     .update(modelAccounts)
@@ -294,6 +325,7 @@ async function save(account: Omit<ModelAccount, 'connectedAt' | 'enabled'>): Pro
     apiKey: account.apiKey ?? null,
     model: account.model ?? null,
     reasoningEffort: account.effort ?? null,
+    supportsVision: account.vision === true,
     /* a connection, or a reconnection, is meant to be used */
     enabled: true,
     connectedAt: now,
@@ -315,6 +347,7 @@ async function save(account: Omit<ModelAccount, 'connectedAt' | 'enabled'>): Pro
         apiKey: row.apiKey,
         model: row.model,
         reasoningEffort: row.reasoningEffort,
+        supportsVision: row.supportsVision,
         updatedAt: row.updatedAt,
       },
     })
@@ -858,6 +891,32 @@ export function connectOpenRouterKey(userId: string, apiKey: string): Promise<vo
 
 export function connectGeminiKey(userId: string, apiKey: string): Promise<void> {
   return connectKey(userId, 'gemini-key', apiKey)
+}
+
+/** Custom URLs must match an administrator-configured complete endpoint. */
+export function approvedCustomUrl(value: string): string {
+  const url = new URL(value)
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash || url.search)
+    throw new Error('Invalid endpoint URL')
+  const approved = (process.env.CUSTOM_AGENT_URLS ?? '').split(',').map((entry) => entry.trim())
+  if (!approved.includes(url.href)) throw new Error('Endpoint is not approved by the administrator')
+  return url.href
+}
+
+export async function connectCompatible(
+  userId: string,
+  kind: 'zai-key' | 'zai-api-key' | 'custom-key',
+  key: string,
+  model: string,
+  endpoint: string,
+  vision: boolean,
+): Promise<void> {
+  key = key.trim()
+  model = model.trim()
+  if (!key || /\s/.test(key) || key.length > 4096) throw new Error('Enter a valid API key')
+  if (!isKnownAccountModel(kind, model)) throw new Error('Enter a valid model ID')
+  const accountId = kind === 'custom-key' ? approvedCustomUrl(endpoint) : undefined
+  await save({ userId, kind, apiKey: key, model, accountId, vision })
 }
 
 /* refreshes are per-user serialized: two runs starting together must not both
