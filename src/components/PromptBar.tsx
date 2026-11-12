@@ -36,7 +36,7 @@ const MAX_ATTACHMENTS = 4
 const MAX_SCOPE_LABEL = 24
 /** the field grows with the draft up to this many lines, then scrolls */
 const MAX_COMPOSER_LINES = 6
-/** a ⌘K older than this is ignored by a composer that mounts later */
+/** a ⌘/ older than this is ignored by a composer that mounts later */
 const FOCUS_REQUEST_TTL_MS = 2000
 
 interface ScopeChip {
@@ -212,7 +212,8 @@ export function PromptBar({ canvasId }: { canvasId: string }) {
   const { allowance } = useAllowance()
   /* the meter names the connection the next task goes to: the composer's pick */
   const runnerStore = useRunnerPick()
-  const pickedProvider = resolveRunnerPick(runnerStore.runners, runnerStore.stored)?.pick.provider
+  const picked = resolveRunnerPick(runnerStore.runners, runnerStore.stored)
+  const pickedProvider = picked?.pick.provider
   /* the selection is the prompt's scope until the chip is dismissed — × or
      Esc drops it entirely, no stepping up to the frame. Keyed on the scope
      so a new selection brings the chip back. */
@@ -242,13 +243,13 @@ export function PromptBar({ canvasId }: { canvasId: string }) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const t = useT()
-  const meter = meterText(allowance, t, pickedProvider)
+  const meter = meterText(allowance, t, pickedProvider, picked?.runner.name)
 
   useLayoutEffect(() => {
     if (inputRef.current) autosize(inputRef.current)
   }, [text])
 
-  /* ⌘K: the page has opened the panel on this tab — take the keyboard. The
+  /* ⌘/: the page has opened the panel on this tab — take the keyboard. The
      request is a timestamp so a composer mounted later (a tab switch some
      minutes on) does not re-run an old one. */
   useEffect(() => {

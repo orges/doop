@@ -341,8 +341,36 @@
     {
       "idx": 49,
       "version": "7",
-      "when": 1794227529677,
-      "tag": "0049_custom_provider_vision",
+      "when": 1794106479747,
+      "tag": "0049_image_descriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794299332162,
+      "tag": "0050_instance_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794347436684,
+      "tag": "0051_custom_providers",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794352711304,
+      "tag": "0052_components",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794484243966,
+      "tag": "0053_merged_provider_vision",
       "breakpoints": true
     }
   ]

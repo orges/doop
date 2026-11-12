@@ -71,7 +71,9 @@ export function effortFor(account: Pick<ModelAccount, 'effort'>): string {
    admits other originators. */
 export const ORIGINATOR = env.CHATGPT_ORIGINATOR
 
-export type TurnBlock = Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam
+/* thinking blocks carry a Chat Completions model's `reasoning_content`, which
+   DeepSeek and Kimi need sent back on every later turn of a run */
+export type TurnBlock = Anthropic.TextBlockParam | Anthropic.ToolUseBlockParam | Anthropic.ThinkingBlockParam
 export type StopReason = 'end_turn' | 'tool_use' | 'max_tokens' | 'refusal'
 
 export interface TurnRequest {
@@ -455,10 +457,7 @@ export async function runAzureTurn(config: AzureConfig, req: TurnRequest): Promi
 }
 
 const transports: Record<
-  Exclude<
-    ModelAccount['kind'],
-    'anthropic-key' | 'openrouter-key' | 'gemini-key' | 'zai-key' | 'zai-api-key' | 'custom-key'
-  >,
+  Extract<ModelAccount['kind'], 'chatgpt' | 'openai-key'>,
   (account: ModelAccount, req: TurnRequest) => Promise<TurnResult>
 > = {
   chatgpt: runChatgpt,
@@ -466,14 +465,7 @@ const transports: Record<
 }
 
 export function runOpenAiTurn(account: ModelAccount, req: TurnRequest): Promise<TurnResult> {
-  if (
-    account.kind === 'anthropic-key' ||
-    account.kind === 'openrouter-key' ||
-    account.kind === 'gemini-key' ||
-    account.kind === 'zai-key' ||
-    account.kind === 'zai-api-key' ||
-    account.kind === 'custom-key'
-  ) {
+  if (account.kind !== 'chatgpt' && account.kind !== 'openai-key') {
     throw new Error(`${account.kind} accounts do not use the OpenAI transport`)
   }
   return transports[account.kind](account, req)

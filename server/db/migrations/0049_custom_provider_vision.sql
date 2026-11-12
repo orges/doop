@@ -1,1 +1,0 @@
-ALTER TABLE "model_accounts" ADD COLUMN "supports_vision" boolean DEFAULT false NOT NULL;
